@@ -11,6 +11,13 @@ import (
 	"strings"
 )
 
+// tagName, tagOptions := parseTag(name)
+//
+// if tagName == "" { // ignore if tag name unset
+//     continue
+// }
+// field := v.Field(i)
+
 // UnpackURLForm populates the fields of the struct pointed to by ptr
 // from the HTTP request parameters in req.
 func UnpackURLForm(req *http.Request, ptr interface{}) error {
@@ -25,10 +32,12 @@ func UnpackURLForm(req *http.Request, ptr interface{}) error {
 		fieldInfo := v.Type().Field(i) // a reflect.StructField
 		tag := fieldInfo.Tag           // a reflect.StructTag
 		name := tag.Get("http")
-		if name == "" {
-			name = strings.ToLower(fieldInfo.Name)
+		tagName, _ := parseTag(name)
+
+		if tagName == "" {
+			tagName = strings.ToLower(fieldInfo.Name)
 		}
-		fields[name] = v.Field(i)
+		fields[tagName] = v.Field(i)
 	}
 
 	// Update struct field for each parameter in the request.
