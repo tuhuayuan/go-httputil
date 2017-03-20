@@ -2,55 +2,47 @@ package httputil
 
 import (
 	"fmt"
-	"reflect"
 )
 
-type reflectField struct {
-	name       string
-	value      interface{}
-	field      reflect.Value
-	tagOptions tagOptions
+// ValidateErrors 验证错误列表,长度为0表示没有错误
+type ValidateErrors []ValidateError
+
+// ValidateError 验证错误
+type ValidateError struct {
+	FieldNames []string `json:"fields,omitempty"`
+	Code       int      `json:"code,omitempty"`
+	Message    string   `json:"message,omitempty"`
 }
 
-func reflectObject(ptr interface{}) []reflectField {
-	fields := make([]reflectField, 0)
-
-	v := reflect.ValueOf(ptr).Elem() // the struct variable
-	for i := 0; i < v.NumField(); i++ {
-		fieldInfo := v.Type().Field(i) // a reflect.StructField
-		tag := fieldInfo.Tag           // a reflect.StructTag
-		name := tag.Get("http")
-		tagName, tagOptions := parseTag(name)
-
-		if tagName == "" { // ignore if tag name unset
-			continue
-		}
-		field := v.Field(i)
-
-		fieldObj := reflectField{
-			name:       tagName,
-			value:      field.Interface(),
-			field:      field,
-			tagOptions: tagOptions,
-		}
-		fields = append(fields, fieldObj)
-	}
-
-	return fields
+// Add 添加一个新错误到列表
+func (e *ValidateErrors) Add(fieldNames []string, code int, message string) {
+	*e = append(*e, ValidateError{
+		FieldNames: fieldNames,
+		Code:       code,
+		Message:    message,
+	})
 }
 
-// ValidateRequireField 验证结构体字段required字段是否都赋值？通过返回nil，否则返回具体错误
-func ValidateRequireField(ptr interface{}) error {
+// Len 返回错误数量
+func (e *ValidateErrors) Len() int {
+	return len(*e)
+}
 
-	fields := reflectObject(ptr)
-	for _, obj := range fields {
-		if obj.tagOptions.Contains("omit") || obj.tagOptions.Contains("omitempty") {
-			continue
-		}
-		if obj.field.IsNil() {
-			return fmt.Errorf("ValidateRequireField: %s unset", obj.name)
-		}
+// Error 实现标准错误接口
+func (e *ValidateErrors) Error() string {
+	return e.String()
+}
 
+// String 实现strng接口方便调试
+func (e *ValidateErrors) String() string {
+	var prnStr string
+	for i := 0; i < len(*e); i++ {
+		prnStr += fmt.Sprintf(
+			"Fields: %v, code: %d, msg: %s\n",
+			(*e)[i].FieldNames,
+			(*e)[i].Code,
+			(*e)[i].Message,
+		)
 	}
-	return nil
+	return prnStr
 }

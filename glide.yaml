@@ -1,0 +1,5 @@
+package: zonst/qipai-golang-libs/httputil
+import:
+- package: github.com/stretchr/testify
+  subpackages:
+  - assert

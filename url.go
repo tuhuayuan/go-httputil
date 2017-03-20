@@ -1,143 +1,166 @@
 package httputil
 
-// TODO: implement optionalTag， like `http:"mail,matchmail"
-
 import (
 	"errors"
-	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
 )
 
-// tagName, tagOptions := parseTag(name)
-//
-// if tagName == "" { // ignore if tag name unset
-//     continue
-// }
-// field := v.Field(i)
-
-// UnpackURLForm populates the fields of the struct pointed to by ptr
-// from the HTTP request parameters in req.
-func UnpackURLForm(req *http.Request, ptr interface{}) error {
-	if err := req.ParseForm(); err != nil {
-		return err
-	}
-
-	// Build map of fields keyed by effective name.
-	fields := make(map[string]reflect.Value)
-	v := reflect.ValueOf(ptr).Elem() // the struct variable
-	for i := 0; i < v.NumField(); i++ {
-		fieldInfo := v.Type().Field(i) // a reflect.StructField
-		tag := fieldInfo.Tag           // a reflect.StructTag
-		name := tag.Get("http")
-		tagName, _ := parseTag(name)
-
-		if tagName == "" {
-			tagName = strings.ToLower(fieldInfo.Name)
+// UnpackRequest 把请求参数映射到制定结构体
+func UnpackRequest(r *http.Request, ptrStruct interface{}) *ValidateErrors {
+	err := r.ParseForm()
+	if err != nil {
+		return &ValidateErrors{
+			ValidateError{
+				Code:    -1,
+				Message: "parse request form error " + err.Error(),
+			},
 		}
-		fields[tagName] = v.Field(i)
 	}
+	return UnpackURLValues(r.Form, ptrStruct)
+}
 
-	// Update struct field for each parameter in the request.
-	for name, values := range req.Form {
-		f := fields[name]
-		if !f.IsValid() {
-			continue // ignore unrecognized HTTP parameters
-		}
-		for _, value := range values {
-			if f.Kind() == reflect.Slice {
-				elem := reflect.New(f.Type().Elem()).Elem()
-				if err := populate(elem, value); err != nil {
-					return fmt.Errorf("%s: %v", name, err)
+// UnpackURLValues 把map[string][]string映射到制定结构体
+func UnpackURLValues(values url.Values, ptrStruct interface{}) *ValidateErrors {
+	errs := &ValidateErrors{}
+
+	structType := reflect.TypeOf(ptrStruct)
+	if structType.Kind() != reflect.Ptr {
+		errs.Add([]string{}, -1, "must unpack to a point")
+		return errs
+	}
+	strcutValue := reflect.ValueOf(ptrStruct)
+
+	mapURLValues(strcutValue, values, errs)
+	if errs.Len() == 0 {
+		return nil
+	}
+	return errs
+}
+
+// mapURLValues 映射url.Values到reflect.Value
+// 支持Slice、Struct、Ptr
+func mapURLValues(structValue reflect.Value, form url.Values, errs *ValidateErrors) {
+	// 获取指针指向
+	if structValue.Kind() == reflect.Ptr {
+		structValue = structValue.Elem()
+	}
+	formStructType := structValue.Type()
+
+	for i := 0; i < formStructType.NumField(); i++ {
+		fieldType := formStructType.Field(i)
+		fieldValue := structValue.Field(i)
+
+		if fieldType.Type.Kind() == reflect.Ptr && fieldType.Anonymous {
+			// 递归匿名指针字段
+			fieldValue.Set(reflect.New(fieldType.Type.Elem()))
+			mapURLValues(fieldValue.Elem(), form, errs)
+			// 设置空值
+			if reflect.DeepEqual(fieldValue.Elem().Interface(), reflect.Zero(fieldValue.Elem().Type()).Interface()) {
+				fieldValue.Set(reflect.Zero(fieldValue.Type()))
+			}
+		} else if fieldType.Type.Kind() == reflect.Struct {
+			// 递归结构体
+			mapURLValues(fieldValue, form, errs)
+		} else {
+			tagValue, ok := fieldType.Tag.Lookup("form")
+			if !ok {
+				continue
+			}
+			omit := false
+			mapName := fieldType.Name
+			tags := strings.SplitN(tagValue, ",", 2)
+			// TODO: tags support ,alias
+			if len(tags) >= 1 {
+				mapName = tags[0]
+			}
+			if len(tags) >= 2 {
+				if tags[1] == "omit" || tags[1] == "optional" {
+					omit = true
 				}
-				f.Set(reflect.Append(f, elem))
+			}
+
+			urlValues, ok := form[mapName]
+			if !ok {
+				if !omit {
+					errs.Add([]string{mapName}, -1, "field missing")
+				}
+				continue
+			}
+			valuesLen := len(urlValues)
+			if fieldType.Type.Kind() == reflect.Slice {
+				sliceType := fieldType.Type.Elem()
+				slice := reflect.MakeSlice(fieldType.Type, valuesLen, valuesLen)
+				for i := 0; i < valuesLen; i++ {
+					err := setProperType(sliceType, slice.Index(i), urlValues[i])
+					if err != nil {
+						errs.Add([]string{mapName}, -1, err.Error())
+					}
+				}
+				fieldValue.Set(slice)
 			} else {
-				if err := populate(f, value); err != nil {
-					return fmt.Errorf("%s: %v", name, err)
+				err := setProperType(fieldType.Type, fieldValue, urlValues[0])
+				if err != nil {
+					errs.Add([]string{mapName}, -1, err.Error())
 				}
 			}
 		}
 	}
-	return nil
 }
 
-func populate(v reflect.Value, value string) error {
-	if v.Kind() != reflect.Ptr {
-		return errors.New("not ptr type")
+// setProperType 支持设置以下原生类型以及它们的指针
+// Int Int8 Int16 Int32 Int64
+// Uint Uint8 Uint16 Uint32 Uint64
+// bool
+// float32 float64
+// string
+func setProperType(fieldType reflect.Type, fieldValue reflect.Value, val string) (err error) {
+	if !fieldValue.CanSet() {
+		return errors.New("field can't set")
 	}
-
-	// 获取指针指向的类型
-	vv := v.Type().Elem()
-	switch vv.Kind() {
-	case reflect.String:
-		v.Set(reflect.ValueOf(&value))
+	// 这里只解引用一次，不去递归处理，所以不支持指针的指针。。。。。。
+	if fieldType.Kind() == reflect.Ptr {
+		underType := fieldType.Elem()
+		underValue := reflect.New(underType)
+		fieldValue.Set(underValue)
+		// fieldValue 必定是CanSet
+		fieldValue = underValue.Elem()
+		fieldType = underType
+	}
+	switch fieldType.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		i, err := strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return err
-		}
-
-		switch vv.Kind() {
-		case reflect.Int:
-			iv := int(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Int8:
-			iv := int8(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Int16:
-			iv := int16(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Int32:
-			iv := int32(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Int64:
-			iv := int64(i)
-			v.Set(reflect.ValueOf(&iv))
+		var intVal int64
+		if intVal, err = strconv.ParseInt(val, 10, 64); err == nil {
+			fieldValue.SetInt(intVal)
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		i, err := strconv.ParseUint(value, 10, 64)
-		if err != nil {
-			return err
-		}
-		switch vv.Kind() {
-		case reflect.Uint:
-			iv := uint(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Uint8:
-			iv := uint8(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Uint16:
-			iv := uint16(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Uint32:
-			iv := uint32(i)
-			v.Set(reflect.ValueOf(&iv))
-		case reflect.Uint64:
-			iv := uint64(i)
-			v.Set(reflect.ValueOf(&iv))
-		}
-	case reflect.Float32, reflect.Float64:
-		f, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return err
-		}
-		switch vv.Kind() {
-		case reflect.Float32:
-			fv := float32(f)
-			v.Set(reflect.ValueOf(&fv))
-		case reflect.Float64:
-			v.Set(reflect.ValueOf(&f))
+		var uintVal uint64
+		if uintVal, err = strconv.ParseUint(val, 10, 64); err == nil {
+			fieldValue.SetUint(uintVal)
 		}
 	case reflect.Bool:
-		b, err := strconv.ParseBool(value)
-		if err != nil {
-			return err
+		var boolVal bool
+		if boolVal, err = strconv.ParseBool(val); err == nil {
+			fieldValue.SetBool(boolVal)
 		}
-		v.Set(reflect.ValueOf(&b))
+	case reflect.Float32:
+		var floatVal float64
+		if floatVal, err = strconv.ParseFloat(val, 32); err == nil {
+			fieldValue.SetFloat(floatVal)
+		}
+	case reflect.Float64:
+		var floatVal float64
+		floatVal, err = strconv.ParseFloat(val, 64)
+		if err != nil {
+			fieldValue.SetFloat(floatVal)
+		}
+	case reflect.String:
+		fieldValue.SetString(val)
 	default:
-		return fmt.Errorf("unsupported kind %s", v.Type())
+		err = errors.New("not supported kind " + fieldType.Kind().String())
 	}
-	return nil
+	return err
 }
