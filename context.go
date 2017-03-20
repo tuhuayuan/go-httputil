@@ -76,9 +76,13 @@ func (c *chainedContext) HandleFunc(f http.HandlerFunc) http.HandlerFunc {
 	staticHead.PushBack(nil)
 
 	return func(w http.ResponseWriter, r *http.Request) {
+		parentCtx := r.Context()
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
 		// 生成动态上下文
 		chainedCxt := &chainedContext{
-			ctx:  context.Background(),
+			ctx:  parentCtx,
 			head: staticHead,
 			ele:  staticHead.Front(),
 			w:    w,

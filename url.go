@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+// URLValuesUnpacker 自定义解析接口
+type URLValuesUnpacker interface {
+}
+
 // UnpackRequest 把请求参数映射到制定结构体
 func UnpackRequest(r *http.Request, ptrStruct interface{}) *ValidateErrors {
 	err := r.ParseForm()
