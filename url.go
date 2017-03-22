@@ -70,7 +70,7 @@ func mapURLValues(structValue reflect.Value, form url.Values, errs *ValidateErro
 			// 递归结构体
 			mapURLValues(fieldValue, form, errs)
 		} else {
-			tagValue, ok := fieldType.Tag.Lookup("form")
+			tagValue, ok := fieldType.Tag.Lookup("http")
 			if !ok {
 				continue
 			}
@@ -82,7 +82,7 @@ func mapURLValues(structValue reflect.Value, form url.Values, errs *ValidateErro
 				mapName = tags[0]
 			}
 			if len(tags) >= 2 {
-				if tags[1] == "omit" || tags[1] == "optional" {
+				if tags[1] == "omit" || tags[1] == "optional" || tags[1] == "omitempty" {
 					omit = true
 				}
 			}
