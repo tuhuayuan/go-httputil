@@ -2,13 +2,15 @@ package httputil
 
 import (
 	"fmt"
+	"reflect"
+	"strings"
 )
 
 // ValidateErrors 验证错误列表,长度为0表示没有错误
-type ValidateErrors []ValidateError
+type ValidateErrors []validateError
 
-// ValidateError 验证错误
-type ValidateError struct {
+// validateError 验证错误
+type validateError struct {
 	FieldNames []string `json:"fields,omitempty"`
 	Code       int      `json:"code,omitempty"`
 	Message    string   `json:"message,omitempty"`
@@ -16,7 +18,7 @@ type ValidateError struct {
 
 // Add 添加一个新错误到列表
 func (e *ValidateErrors) Add(fieldNames []string, code int, message string) {
-	*e = append(*e, ValidateError{
+	*e = append(*e, validateError{
 		FieldNames: fieldNames,
 		Code:       code,
 		Message:    message,
@@ -45,4 +47,61 @@ func (e *ValidateErrors) String() string {
 		)
 	}
 	return prnStr
+}
+
+// Validate 目前只支持整形非0值，字符串非空，指针非nil，slice非空
+func Validate(ptrStuct interface{}) error {
+	structType := reflect.TypeOf(ptrStuct)
+	if structType.Kind() != reflect.Ptr || structType.Elem().Kind() != reflect.Struct {
+		return nil
+	}
+
+	structType = structType.Elem()
+	structValue := reflect.ValueOf(ptrStuct).Elem()
+
+	validateErr := &ValidateErrors{}
+
+	for i := 0; i < structType.NumField(); i++ {
+		fieldType := structType.Field(i)
+		fieldValue := structValue.Field(i)
+		tag, ok := fieldType.Tag.Lookup("validate")
+		if !ok {
+			continue
+		}
+		if strings.Contains(tag, "required") {
+			found := true
+			switch fieldType.Type.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+				reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				if fieldValue.Int() == 0 {
+					found = false
+				}
+			case reflect.String:
+				if fieldValue.String() == "" {
+					found = false
+				}
+			case reflect.Ptr:
+				if fieldValue.IsNil() {
+					found = false
+				}
+			case reflect.Slice:
+				if fieldValue.Len() == 0 {
+					found = false
+				}
+			case reflect.Float32, reflect.Float64:
+				if fieldValue.Float() == 0.0 {
+					found = false
+				}
+			}
+
+			if !found {
+				validateErr.Add([]string{fieldType.Name}, -1, "required not found")
+			}
+		}
+
+	}
+	if validateErr.Len() == 0 {
+		return nil
+	}
+	return validateErr
 }

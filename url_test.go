@@ -25,19 +25,17 @@ var (
 )
 
 type TodoAuthor struct {
-	Name string `form:"name"`
+	Name string `http:"name"`
 }
 
 type TodoItem struct {
-	ID    int64    `form:"id"`
-	Title string   `form:"title"`
-	Done  bool     `form:"done,omit"`
-	Tags  []string `form:"tags[],omit"`
-	IDs   []*int   `form:"ids[]"`
+	ID    int64    `http:"id"`
+	Title string   `http:"title"`
+	Done  bool     `http:"done,omit"`
+	Tags  []string `http:"tags[],omit"`
+	IDs   []*int   `http:"ids[]"`
 
 	TodoAuthor
-
-	//*string `form:""`
 }
 
 func TestUnpackURLValues(t *testing.T) {

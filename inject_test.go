@@ -1,4 +1,4 @@
-package inject
+package httputil
 
 import (
 	"fmt"
@@ -28,7 +28,7 @@ func (g *Greeter) String() string {
 }
 
 func Test_InjectorInvoke(t *testing.T) {
-	inj := New()
+	inj := NewInjector()
 	assert.NotNil(t, inj)
 
 	// 映射字符串
@@ -65,7 +65,7 @@ func Test_InjectorInvoke(t *testing.T) {
 }
 
 func Test_InjectorInvokeReturnValues(t *testing.T) {
-	inj := New()
+	inj := NewInjector()
 	assert.NotNil(t, inj)
 
 	rvs, err := inj.Invoke(func() (string, bool) {
@@ -79,7 +79,7 @@ func Test_InjectorInvokeReturnValues(t *testing.T) {
 }
 
 func Test_InjectorApply(t *testing.T) {
-	inj := New()
+	inj := NewInjector()
 	assert.NotNil(t, inj)
 
 	inj.Map("dep1").MapTo("dep2", (*SpecialString)(nil))
@@ -92,7 +92,7 @@ func Test_InjectorApply(t *testing.T) {
 	assert.Equal(t, s1.Dep2, "dep2")
 	assert.Equal(t, s1.Dep3, "")
 
-	inj = New()
+	inj = NewInjector()
 	assert.NotNil(t, inj)
 	inj.MapTo("dep2", (*SpecialString)(nil))
 
@@ -117,17 +117,17 @@ func Test_InterfaceOf(t *testing.T) {
 }
 
 func Test_InjectorSetParent(t *testing.T) {
-	injParent := New()
+	injParent := NewInjector()
 	injParent.MapTo("another dep", (*SpecialString)(nil))
 
-	inj := New()
+	inj := NewInjector()
 	inj.SetParent(injParent)
 
 	assert.Equal(t, inj.Get(InterfaceOf((*SpecialString)(nil))).IsValid(), true)
 }
 
 func Test_InjectImplementors(t *testing.T) {
-	inj := New()
+	inj := NewInjector()
 	g := &Greeter{"Jeremy"}
 	inj.Map(g)
 

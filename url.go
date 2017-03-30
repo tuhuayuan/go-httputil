@@ -14,21 +14,13 @@ type URLValuesUnpacker interface {
 }
 
 // UnpackRequest 把请求参数映射到制定结构体
-func UnpackRequest(r *http.Request, ptrStruct interface{}) *ValidateErrors {
-	err := r.ParseForm()
-	if err != nil {
-		return &ValidateErrors{
-			ValidateError{
-				Code:    -1,
-				Message: "parse request form error " + err.Error(),
-			},
-		}
-	}
+func UnpackRequest(r *http.Request, ptrStruct interface{}) error {
+	r.ParseForm()
 	return UnpackURLValues(r.Form, ptrStruct)
 }
 
 // UnpackURLValues 把map[string][]string映射到制定结构体
-func UnpackURLValues(values url.Values, ptrStruct interface{}) *ValidateErrors {
+func UnpackURLValues(values url.Values, ptrStruct interface{}) error {
 	errs := &ValidateErrors{}
 
 	structType := reflect.TypeOf(ptrStruct)
@@ -70,7 +62,7 @@ func mapURLValues(structValue reflect.Value, form url.Values, errs *ValidateErro
 			// 递归结构体
 			mapURLValues(fieldValue, form, errs)
 		} else {
-			tagValue, ok := fieldType.Tag.Lookup("form")
+			tagValue, ok := fieldType.Tag.Lookup("http")
 			if !ok {
 				continue
 			}
@@ -82,7 +74,7 @@ func mapURLValues(structValue reflect.Value, form url.Values, errs *ValidateErro
 				mapName = tags[0]
 			}
 			if len(tags) >= 2 {
-				if tags[1] == "omit" || tags[1] == "optional" {
+				if tags[1] == "omit" || tags[1] == "optional" || tags[1] == "omitempty" {
 					omit = true
 				}
 			}

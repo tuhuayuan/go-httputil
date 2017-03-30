@@ -15,3 +15,7 @@ func TestValidateErrors(t *testing.T) {
 	assert.Len(t, errs, 2)
 	fmt.Println(&errs)
 }
+
+func TestValidate(t *testing.T) {
+	// TODO 在其他项目测试过，需要完善所有支持类型的测试
+}

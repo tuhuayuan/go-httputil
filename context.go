@@ -14,7 +14,7 @@ type HTTPContext interface {
 
 	Set(key interface{}, val interface{})
 	Use(f http.HandlerFunc) HTTPContext
-	HandleFunc(f http.HandlerFunc) http.HandlerFunc
+	HandleFunc(f ...http.HandlerFunc) http.HandlerFunc
 	Next()
 }
 
@@ -68,11 +68,13 @@ func (c *chainedContext) Use(f http.HandlerFunc) HTTPContext {
 }
 
 // HandleFunc 包装http.HandlerFunc
-func (c *chainedContext) HandleFunc(f http.HandlerFunc) http.HandlerFunc {
+func (c *chainedContext) HandleFunc(handlers ...http.HandlerFunc) http.HandlerFunc {
 	// 生成静态上下文
 	staticHead := list.New()
 	staticHead.PushBackList(c.head)
-	staticHead.PushBack(f)
+	for _, f := range handlers {
+		staticHead.PushBack(f)
+	}
 	staticHead.PushBack(nil)
 
 	return func(w http.ResponseWriter, r *http.Request) {

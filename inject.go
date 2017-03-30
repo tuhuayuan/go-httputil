@@ -1,4 +1,4 @@
-package inject
+package httputil
 
 import (
 	"fmt"
@@ -84,8 +84,8 @@ func IsFunction(f interface{}) bool {
 	return true
 }
 
-// New 创建一个Injector对象
-func New() Injector {
+// NewInjector 创建一个Injector对象
+func NewInjector() Injector {
 	return &injector{
 		values: make(map[reflect.Type]reflect.Value),
 	}
