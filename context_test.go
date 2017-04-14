@@ -1,36 +1,33 @@
 package httputil
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
+
+	"context"
 
 	"github.com/stretchr/testify/assert"
 )
 
-// KeyValueMid 中间件：任意reflect.Value
-func KeyValueMid(key interface{}, value interface{}) http.HandlerFunc {
+func withKeyValue(key interface{}, value interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx := GetContext(r)
-		ctx.Set(key, value)
-		ctx.Next()
+		ctx := r.Context()
+		WithValue(ctx, key, value)
+		Next(ctx)
 	}
 }
 
 func Test_KeyValueMid(t *testing.T) {
-	type Data1 struct {
-		d1 string
-	}
+	ctx := WithHTTPContext(context.Background())
+	Use(ctx, withKeyValue("name", "tuhuayuan"))
 
-	ctx := NewHTTPContext()
-	ctx.Use(KeyValueMid("name", "tuhuayuan"))
-	ctx.Use(KeyValueMid("data", &Data1{
-		d1: "ruby",
-	}))
+	assert.HTTPBodyContains(t, HandleFunc(ctx,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+			ctx := r.Context()
+			fmt.Println(ctx.Value("name"))
+			w.Write([]byte("ok"))
 
-	assert.HTTPBodyContains(t, ctx.HandleFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		c := r.Context()
-		assert.Equal(t, c.Value("name"), "tuhuayuan")
-		w.Write([]byte("ok"))
-	}), "GET", "/", map[string][]string{}, "ok")
+		}), "GET", "/", map[string][]string{}, "ok")
 }

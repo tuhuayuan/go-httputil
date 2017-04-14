@@ -5,101 +5,80 @@ import (
 	"context"
 	"net/http"
 	"reflect"
-	"time"
 )
 
-// HTTPContext HTTP加强版上下文实现
-type HTTPContext interface {
-	context.Context
+type httpContextKey string
 
-	Set(key interface{}, val interface{})
-	Use(f http.HandlerFunc) HTTPContext
-	HandleFunc(f ...http.HandlerFunc) http.HandlerFunc
-	Next()
-}
+const (
+	httpContextName httpContextKey = "_httpcontext_"
+)
 
 // Context 上下文
-type chainedContext struct {
-	ctx  context.Context
+type httpContext struct {
 	ele  *list.Element
 	head *list.List
 	w    http.ResponseWriter
 	r    *http.Request
 }
 
-// NewHTTPContext 新建一个Context
-func NewHTTPContext() HTTPContext {
-	return &chainedContext{
-		ctx:  context.Background(),
+// WithHTTPContext 新建一个Context
+func WithHTTPContext(parent context.Context) context.Context {
+	return context.WithValue(parent, httpContextName, &httpContext{
 		head: list.New(),
-	}
-}
-
-// GetContext 获取HTTPContext或者panic.
-func GetContext(r *http.Request) HTTPContext {
-	return r.Context().(HTTPContext)
-}
-
-func (c *chainedContext) Deadline() (deadline time.Time, ok bool) {
-	return c.ctx.Deadline()
-}
-
-func (c *chainedContext) Done() <-chan struct{} {
-	return c.ctx.Done()
-}
-
-func (c *chainedContext) Err() error {
-	return c.ctx.Err()
-}
-
-func (c *chainedContext) Value(key interface{}) interface{} {
-	return c.ctx.Value(key)
-}
-
-// Set 设置context自定义值
-func (c *chainedContext) Set(key interface{}, value interface{}) {
-	c.ctx = context.WithValue(c.ctx, key, value)
+	})
 }
 
 // Use 设置一个中间件
-func (c *chainedContext) Use(f http.HandlerFunc) HTTPContext {
-	c.head.PushBack(f)
-	return c
+func Use(ctx context.Context, f http.HandlerFunc) context.Context {
+	httpCtx := ctx.Value(httpContextName).(*httpContext)
+	httpCtx.head.PushBack(f)
+	return ctx
 }
 
 // HandleFunc 包装http.HandlerFunc
-func (c *chainedContext) HandleFunc(handlers ...http.HandlerFunc) http.HandlerFunc {
+func HandleFunc(ctx context.Context, handlers ...http.HandlerFunc) http.HandlerFunc {
+	httpCtx := ctx.Value(httpContextName).(*httpContext)
+
 	// 生成静态上下文
 	staticHead := list.New()
-	staticHead.PushBackList(c.head)
+	staticHead.PushBackList(httpCtx.head)
 	for _, f := range handlers {
 		staticHead.PushBack(f)
 	}
+	// 已一个nil表示结尾
 	staticHead.PushBack(nil)
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		parentCtx := r.Context()
-		if parentCtx == nil {
-			parentCtx = context.Background()
-		}
+		rawContext := r.Context()
 		// 生成动态上下文
-		chainedCxt := &chainedContext{
-			ctx:  parentCtx,
+		dynamic := &httpContext{
 			head: staticHead,
 			ele:  staticHead.Front(),
 			w:    w,
 		}
-		chainedCxt.r = r.WithContext(chainedCxt)
-		chainedCxt.Next()
+		if rawContext != nil {
+			dynamic.r = r.WithContext(context.WithValue(rawContext, httpContextName, dynamic))
+		} else {
+			dynamic.r = r.WithContext(context.WithValue(context.Background(), httpContextName, dynamic))
+		}
+		Next(dynamic.r.Context())
 	}
 }
 
 // Next 调用下一个中间件
-func (c *chainedContext) Next() {
-	v := c.ele.Value
+func Next(ctx context.Context) {
+	httpCtx := ctx.Value(httpContextName).(*httpContext)
+	v := httpCtx.ele.Value
 	if !reflect.ValueOf(v).IsNil() {
-		cur := (c.ele.Value).(http.HandlerFunc)
-		c.ele = c.ele.Next()
-		cur(c.w, c.r)
+		handler := (httpCtx.ele.Value).(http.HandlerFunc)
+		httpCtx.ele = httpCtx.ele.Next()
+		handler(httpCtx.w, httpCtx.r)
 	}
+}
+
+// WithValue 添加数据
+func WithValue(ctx context.Context, key, val interface{}) context.Context {
+	httpCtx := ctx.Value(httpContextName).(*httpContext)
+	httpCtx.r = httpCtx.r.WithContext(context.WithValue(ctx, key, val))
+	return httpCtx.r.Context()
 }
