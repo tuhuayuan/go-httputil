@@ -31,3 +31,17 @@ func Test_KeyValueMid(t *testing.T) {
 
 		}), "GET", "/", map[string][]string{}, "ok")
 }
+
+func TestContextNil(t *testing.T) {
+	ctx := WithHTTPContext(nil)
+	Use(ctx, withKeyValue("name", "tuhuayuan"))
+
+	assert.HTTPBodyContains(t, HandleFunc(ctx,
+		func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+			ctx := r.Context()
+			fmt.Println(ctx.Value("name"))
+			w.Write([]byte("ok"))
+
+		}), "GET", "/", map[string][]string{}, "ok")
+}
