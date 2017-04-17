@@ -15,10 +15,10 @@ const (
 
 // Context 上下文
 type httpContext struct {
-	ele  *list.Element
-	head *list.List
-	w    http.ResponseWriter
-	r    *http.Request
+	element *list.Element
+	head    *list.List
+	w       http.ResponseWriter
+	r       *http.Request
 }
 
 // WithHTTPContext 新建一个Context
@@ -52,9 +52,9 @@ func HandleFunc(ctx context.Context, handlers ...http.HandlerFunc) http.HandlerF
 		rawContext := r.Context()
 		// 生成动态上下文
 		dynamic := &httpContext{
-			head: staticHead,
-			ele:  staticHead.Front(),
-			w:    w,
+			head:    staticHead,
+			element: staticHead.Front(),
+			w:       w,
 		}
 		if rawContext != nil {
 			dynamic.r = r.WithContext(context.WithValue(rawContext, httpContextName, dynamic))
@@ -68,10 +68,9 @@ func HandleFunc(ctx context.Context, handlers ...http.HandlerFunc) http.HandlerF
 // Next 调用下一个中间件
 func Next(ctx context.Context) {
 	httpCtx := ctx.Value(httpContextName).(*httpContext)
-	v := httpCtx.ele.Value
-	if !reflect.ValueOf(v).IsNil() {
-		handler := (httpCtx.ele.Value).(http.HandlerFunc)
-		httpCtx.ele = httpCtx.ele.Next()
+	if !reflect.ValueOf(httpCtx.element.Value).IsNil() {
+		handler := (httpCtx.element.Value).(http.HandlerFunc)
+		httpCtx.element = httpCtx.element.Next()
 		handler(httpCtx.w, httpCtx.r)
 	}
 }
